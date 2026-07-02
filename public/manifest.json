@@ -1,0 +1,10 @@
+{
+  "name": "Golf Stats",
+  "short_name": "GolfStats",
+  "start_url": "/rounds",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "orientation": "portrait",
+  "icons": []
+}

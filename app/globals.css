@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  height: 100%;
+  background-color: #0a0a0a;
+  color: #e5e5e5;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+body {
+  font-feature-settings: "tnum" 1, "cv11" 1;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+/* All numerics use tabular figures for column alignment */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Prevent double-tap zoom on buttons */
+button, [role="button"] {
+  touch-action: manipulation;
+}
+
+/* Safe-area padding for iOS notches / home indicator */
+.pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+}
+.pt-safe {
+  padding-top: max(env(safe-area-inset-top), 0.5rem);
+}
