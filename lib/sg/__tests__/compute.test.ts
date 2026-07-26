@@ -139,9 +139,10 @@ describe("holeSG — aggregate across a full hole", () => {
     // = teePar45(420) - 0 - 4
     const expectedTotal = round3(baselines.teePar45(420) - 4);
     expect(result.total).toBeCloseTo(expectedTotal, 3);
-    // Broadie: par-4 tee at 420 ≈ 3.39, so sg total ≈ -0.61 (a par when expected 3.39 = losing 0.61)
-    expect(result.total).toBeLessThan(0);
-    expect(result.total).toBeGreaterThan(-1);
+    // Broadie: 420y par 4 tee expects ~3.99 strokes. Making par is essentially
+    // tour-average → SG total ≈ 0 (small negative around -0.01).
+    expect(result.total).toBeGreaterThan(-0.15);
+    expect(result.total).toBeLessThan(0.05);
   });
 
   it("par-4 birdied with a chip-in from 20 yards", () => {
