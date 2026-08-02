@@ -14,13 +14,12 @@ import {
 import type { StoredRound, StoredShot, UnforcedErrors } from "@/lib/storage/types";
 import type { Lie } from "@/lib/sg/types";
 import { scoreShots } from "@/lib/entry/scoreDraft";
+import { finalizeRound } from "@/lib/entry/finalizeRound";
 import { ParCirclePicker } from "@/components/entry/ParCirclePicker";
 import { ScoreStepper } from "@/components/entry/ScoreStepper";
 import { ShotTable } from "@/components/entry/ShotTable";
 import { UnforcedErrorsList } from "@/components/entry/UnforcedErrorsList";
 import { CelebrationCard } from "@/components/entry/CelebrationCard";
-import { totalSG } from "@/lib/sg/compute";
-import { computeTiger5 } from "@/lib/tiger5";
 import { cn, fmtSG, sgColorClass } from "@/lib/utils";
 
 export default function RoundEntryPage() {
@@ -210,30 +209,9 @@ export default function RoundEntryPage() {
   const finishRound = async () => {
     try {
       const shots = await getShotsForRound(round.id);
-      const scored = scoreShots(shots, parPerHole);
-      const sg = totalSG(
-        scored.map((s) => ({
-          startLie: s.startLie,
-          startDistance: s.startDistance,
-          endLie: s.endLie,
-          endDistance: s.endDistance,
-          holed: s.holed,
-          penalty: s.penalty,
-          par: (parPerHole[s.holeNumber - 1] ?? 4) as 3 | 4 | 5,
-        })),
-      );
-      const totalScore = holeScores.slice(0, holeCount).reduce((a, b) => a + (b || 0), 0);
-      const tiger5 = computeTiger5(round, scored);
       const updated: StoredRound = {
-        ...round,
+        ...finalizeRound(round, shots),
         status: "complete",
-        totalScore,
-        sgTotal: sg.total,
-        sgOTT: sg.ott,
-        sgAPP: sg.app,
-        sgARG: sg.arg,
-        sgPUTT: sg.putt,
-        tiger5,
       };
       await saveRound(updated);
       router.push(`/rounds/${round.id}/summary`);

@@ -1,8 +1,10 @@
 /**
  * Cloud sync — mirrors local IndexedDB to Supabase.
  *
- * Model: IndexedDB is the primary write target (offline-first). Sync runs
- * on login, on manual trigger, and after every local write.
+ * Model: IndexedDB is the primary write target (offline-first). Cloud pushes
+ * are best-effort and fire in the background; they NEVER block or throw into
+ * the UI. The user id is read from a synchronous cache (set by AuthProvider),
+ * so a write does not trigger a network round-trip to the auth server.
  *
  * Conflict resolution: last-writer-wins by `updatedAt`.
  */
@@ -10,71 +12,106 @@
 "use client";
 
 import { supabase } from "@/lib/supabase/client";
+import { getCurrentUserId } from "@/lib/supabase/session";
 import {
   listRounds as idbListRounds,
   saveRound as idbSaveRound,
   deleteRound as idbDeleteRound,
   getShotsForRound as idbGetShotsForRound,
   saveShot as idbSaveShot,
-  deleteShot as idbDeleteShot,
   listCourses as idbListCourses,
   upsertCourse as idbUpsertCourse,
+  deleteCourse as idbDeleteCourse,
+  listGameSessions as idbListGameSessions,
+  saveGameSession as idbSaveGameSession,
 } from "./local";
 import type { StoredRound, StoredShot, StoredCourse } from "./types";
+import type { GameSession } from "@/lib/practice/types";
 
-// ---------- Round sync ----------
+// ---------- Round sync (best-effort, non-throwing) ----------
 
 export async function pushRound(round: StoredRound): Promise<void> {
-  const { data: sess } = await supabase.auth.getUser();
-  const userId = sess.user?.id;
+  const userId = getCurrentUserId();
   if (!userId) return;
-  const { error } = await supabase.from("rounds").upsert({
-    id: round.id,
-    user_id: userId,
-    data: round,
-    updated_at: new Date(round.updatedAt).toISOString(),
-  });
-  if (error) console.error("pushRound:", error);
+  try {
+    const { error } = await supabase.from("rounds").upsert({
+      id: round.id,
+      user_id: userId,
+      data: round,
+      updated_at: new Date(round.updatedAt).toISOString(),
+    });
+    if (error) console.warn("pushRound:", error.message);
+  } catch (e) {
+    console.warn("pushRound failed (offline?):", e);
+  }
 }
 
 export async function pushShot(roundId: string, shot: StoredShot): Promise<void> {
-  const { data: sess } = await supabase.auth.getUser();
-  const userId = sess.user?.id;
+  const userId = getCurrentUserId();
   if (!userId) return;
-  const { error } = await supabase.from("shots").upsert({
-    id: shot.id,
-    round_id: roundId,
-    user_id: userId,
-    data: shot,
-    updated_at: new Date().toISOString(),
-  });
-  if (error) console.error("pushShot:", error);
+  try {
+    const { error } = await supabase.from("shots").upsert({
+      id: shot.id,
+      round_id: roundId,
+      user_id: userId,
+      data: shot,
+      updated_at: new Date().toISOString(),
+    });
+    if (error) console.warn("pushShot:", error.message);
+  } catch (e) {
+    console.warn("pushShot failed (offline?):", e);
+  }
 }
 
 export async function pushCourse(course: StoredCourse): Promise<void> {
-  const { data: sess } = await supabase.auth.getUser();
-  const userId = sess.user?.id;
+  const userId = getCurrentUserId();
   if (!userId) return;
-  const { error } = await supabase.from("courses").upsert({
-    name: course.name,
-    user_id: userId,
-    data: course,
-    updated_at: new Date(course.lastUsedAt).toISOString(),
-  });
-  if (error) console.error("pushCourse:", error);
+  try {
+    const { error } = await supabase.from("courses").upsert({
+      name: course.name,
+      user_id: userId,
+      data: course,
+      updated_at: new Date(course.lastUsedAt).toISOString(),
+    });
+    if (error) console.warn("pushCourse:", error.message);
+  } catch (e) {
+    console.warn("pushCourse failed (offline?):", e);
+  }
 }
 
 export async function deleteRoundRemote(roundId: string): Promise<void> {
-  const { data: sess } = await supabase.auth.getUser();
-  if (!sess.user?.id) return;
-  await supabase.from("rounds").delete().eq("id", roundId);
-  // shots cascade via FK
+  if (!getCurrentUserId()) return;
+  try {
+    await supabase.from("rounds").delete().eq("id", roundId);
+    // shots cascade via FK
+  } catch (e) {
+    console.warn("deleteRoundRemote failed:", e);
+  }
 }
 
 export async function deleteShotRemote(shotId: string): Promise<void> {
-  const { data: sess } = await supabase.auth.getUser();
-  if (!sess.user?.id) return;
-  await supabase.from("shots").delete().eq("id", shotId);
+  if (!getCurrentUserId()) return;
+  try {
+    await supabase.from("shots").delete().eq("id", shotId);
+  } catch (e) {
+    console.warn("deleteShotRemote failed:", e);
+  }
+}
+
+export async function pushGameSession(session: GameSession): Promise<void> {
+  const userId = getCurrentUserId();
+  if (!userId) return;
+  try {
+    const { error } = await supabase.from("game_sessions").upsert({
+      id: session.id,
+      user_id: userId,
+      data: session,
+      updated_at: new Date(session.createdAt).toISOString(),
+    });
+    if (error) console.warn("pushGameSession:", error.message);
+  } catch (e) {
+    console.warn("pushGameSession failed (offline?):", e);
+  }
 }
 
 // ---------- Full pull (on login) ----------
@@ -84,8 +121,7 @@ interface RemoteShotRow { id: string; round_id: string; data: StoredShot; update
 interface RemoteCourseRow { name: string; data: StoredCourse; updated_at: string }
 
 export async function pullAll(): Promise<{ rounds: number; shots: number; courses: number }> {
-  const { data: sess } = await supabase.auth.getUser();
-  const userId = sess.user?.id;
+  const userId = getCurrentUserId();
   if (!userId) return { rounds: 0, shots: 0, courses: 0 };
 
   const [roundsRes, shotsRes, coursesRes] = await Promise.all([
@@ -123,18 +159,33 @@ export async function pullAll(): Promise<{ rounds: number; shots: number; course
     }
   }
 
+  // Game sessions — best-effort; table may not exist yet.
+  try {
+    const gsRes = await supabase
+      .from("game_sessions")
+      .select("id, data, updated_at")
+      .eq("user_id", userId);
+    if (!gsRes.error && gsRes.data) {
+      for (const row of gsRes.data as { id: string; data: GameSession }[]) {
+        await idbSaveGameSession(row.data);
+      }
+    }
+  } catch {
+    /* game_sessions table not provisioned — ignore */
+  }
+
   return { rounds: rCount, shots: sCount, courses: cCount };
 }
 
 // ---------- Full push (initial sync of local → remote) ----------
 
 export async function pushAll(): Promise<{ rounds: number; shots: number; courses: number }> {
-  const { data: sess } = await supabase.auth.getUser();
-  if (!sess.user?.id) return { rounds: 0, shots: 0, courses: 0 };
+  if (!getCurrentUserId()) return { rounds: 0, shots: 0, courses: 0 };
 
   const rounds = await idbListRounds();
   let sCount = 0;
   for (const r of rounds) {
+    // Round MUST be pushed before its shots (FK dependency).
     await pushRound(r);
     const shots = await idbGetShotsForRound(r.id);
     for (const s of shots) {
@@ -144,25 +195,23 @@ export async function pushAll(): Promise<{ rounds: number; shots: number; course
   }
   const courses = await idbListCourses();
   for (const c of courses) await pushCourse(c);
+  const sessions = await idbListGameSessions();
+  for (const s of sessions) await pushGameSession(s);
   return { rounds: rounds.length, shots: sCount, courses: courses.length };
 }
 
-// ---------- Full local wipe (all data + auth signout is caller's choice) ----------
+// ---------- Full local wipe ----------
 
 export async function wipeAllLocal(): Promise<void> {
   const rounds = await idbListRounds();
   for (const r of rounds) await idbDeleteRound(r.id);
   const courses = await idbListCourses();
-  for (const c of courses) {
-    // deleting course by name — use the helper
-    const { deleteCourse } = await import("./local");
-    await deleteCourse(c.name);
-  }
+  for (const c of courses) await idbDeleteCourse(c.name);
 }
 
 // ---------- Delete a single round everywhere ----------
 
 export async function deleteRoundEverywhere(roundId: string): Promise<void> {
   await idbDeleteRound(roundId);
-  await deleteRoundRemote(roundId);
+  void deleteRoundRemote(roundId);
 }

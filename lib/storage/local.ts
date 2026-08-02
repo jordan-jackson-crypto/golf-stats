@@ -11,15 +11,17 @@
 
 import { openDB, type IDBPDatabase } from "idb";
 import type { StoredRound, StoredShot, EntryMetrics, StoredCourse } from "./types";
+import type { GameSession } from "@/lib/practice/types";
 
 const DB_NAME = "golf-stats";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 interface Schema {
   rounds: { key: string; value: StoredRound };
   shots: { key: string; value: StoredShot & { roundId: string } };
   metrics: { key: string; value: EntryMetrics };
   courses: { key: string; value: StoredCourse };
+  gameSessions: { key: string; value: GameSession };
 }
 
 let dbPromise: Promise<IDBPDatabase<Schema>> | null = null;
@@ -41,10 +43,38 @@ function getDB() {
         if (!db.objectStoreNames.contains("courses")) {
           db.createObjectStore("courses", { keyPath: "name" });
         }
+        if (!db.objectStoreNames.contains("gameSessions")) {
+          const gs = db.createObjectStore("gameSessions", { keyPath: "id" });
+          gs.createIndex("gameId", "gameId");
+        }
       },
     });
   }
   return dbPromise;
+}
+
+// ---------- practice game sessions ----------
+
+export async function saveGameSession(session: GameSession): Promise<void> {
+  const db = await getDB();
+  await db.put("gameSessions", session);
+}
+
+export async function listGameSessions(): Promise<GameSession[]> {
+  const db = await getDB();
+  const all = await db.getAll("gameSessions");
+  return all.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function getGameSessionsForGame(gameId: string): Promise<GameSession[]> {
+  const db = await getDB();
+  const all = await db.getAllFromIndex("gameSessions", "gameId", gameId);
+  return all.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function deleteGameSession(id: string): Promise<void> {
+  const db = await getDB();
+  await db.delete("gameSessions", id);
 }
 
 // ---------- courses ----------

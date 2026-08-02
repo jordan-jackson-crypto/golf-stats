@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase/client";
+import { setCurrentUserId } from "@/lib/supabase/session";
 
 interface AuthState {
   session: Session | null;
@@ -22,10 +23,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
     supabase.auth.getSession().then(({ data }) => {
       if (!mounted) return;
+      setCurrentUserId(data.session?.user?.id ?? null);
       setSession(data.session);
       setLoading(false);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+      setCurrentUserId(s?.user?.id ?? null);
       setSession(s);
     });
     return () => {

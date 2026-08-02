@@ -8,8 +8,10 @@
 "use client";
 
 import * as local from "./local";
-import { pushRound, pushShot, pushCourse, deleteRoundEverywhere, deleteShotRemote } from "./sync";
+import { pushRound, pushShot, pushCourse, pushGameSession, deleteRoundEverywhere, deleteShotRemote } from "./sync";
+import { finalizeRound } from "@/lib/entry/finalizeRound";
 import type { StoredRound, StoredShot, StoredCourse, EntryMetrics } from "./types";
+import type { GameSession } from "@/lib/practice/types";
 
 // ---------- reads (local only) ----------
 export const getRound = local.getRound;
@@ -17,6 +19,19 @@ export const listRounds = local.listRounds;
 export const getShotsForRound = local.getShotsForRound;
 export const listCourses = local.listCourses;
 export const getMetrics = local.getMetrics;
+export const listGameSessions = local.listGameSessions;
+export const getGameSessionsForGame = local.getGameSessionsForGame;
+
+// ---------- practice game sessions ----------
+
+export async function saveGameSession(session: GameSession): Promise<void> {
+  await local.saveGameSession(session);
+  void pushGameSession(session);
+}
+
+export async function deleteGameSession(id: string): Promise<void> {
+  await local.deleteGameSession(id);
+}
 
 // ---------- writes (local + background cloud) ----------
 
@@ -54,4 +69,26 @@ export async function deleteShot(id: string): Promise<void> {
 export async function deleteCourse(name: string): Promise<void> {
   await local.deleteCourse(name);
   // (No remote delete for courses yet — they're small and non-destructive to leave.)
+}
+
+// ---------- maintenance ----------
+
+/**
+ * Recompute SG + Tiger 5 for every completed round using the current
+ * baselines. Run after a baseline correction so stored summaries update.
+ * Returns the number of rounds updated.
+ */
+export async function recomputeAllRounds(): Promise<number> {
+  const rounds = await local.listRounds();
+  let updated = 0;
+  for (const round of rounds) {
+    if (round.status !== "complete") continue;
+    const shots = await local.getShotsForRound(round.id);
+    if (shots.length === 0) continue; // score-only round, nothing to recompute
+    const next = finalizeRound(round, shots);
+    await local.saveRound(next);
+    void pushRound(next);
+    updated++;
+  }
+  return updated;
 }

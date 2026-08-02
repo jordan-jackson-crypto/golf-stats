@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, LogOut, Trash2, RefreshCw, AlertTriangle } from "lucide-react";
+import { ArrowLeft, LogOut, Trash2, RefreshCw, AlertTriangle, Calculator } from "lucide-react";
 import { useAuth } from "@/lib/auth/AuthProvider";
-import { listRounds, deleteRound } from "@/lib/storage";
+import { listRounds, deleteRound, recomputeAllRounds } from "@/lib/storage";
 import { pullAll, pushAll, wipeAllLocal } from "@/lib/storage/sync";
 import type { StoredRound } from "@/lib/storage/types";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,8 @@ export default function SettingsPage() {
   const [confirmWipe, setConfirmWipe] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [recomputing, setRecomputing] = useState(false);
+  const [recomputeMsg, setRecomputeMsg] = useState<string | null>(null);
 
   const refresh = () => listRounds().then(setRounds);
   useEffect(() => { refresh(); }, []);
@@ -35,6 +37,20 @@ export default function SettingsPage() {
       setSyncMsg("Sync failed: " + (e instanceof Error ? e.message : String(e)));
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const runRecompute = async () => {
+    setRecomputing(true);
+    setRecomputeMsg(null);
+    try {
+      const n = await recomputeAllRounds();
+      setRecomputeMsg(`Recomputed SG for ${n} round${n === 1 ? "" : "s"}.`);
+      await refresh();
+    } catch (e) {
+      setRecomputeMsg("Failed: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setRecomputing(false);
     }
   };
 
@@ -93,6 +109,30 @@ export default function SettingsPage() {
             {syncing ? "Syncing…" : "Sync now"}
           </button>
           {syncMsg && <div className="mt-2 text-[11px] text-fg-muted">{syncMsg}</div>}
+        </div>
+      </section>
+
+      {/* Recompute SG */}
+      <section className="mb-6">
+        <h2 className="mb-2 text-[11px] uppercase tracking-wide text-fg-faint">Strokes Gained</h2>
+        <div className="rounded-lg border border-border bg-bg-raised p-3">
+          <div className="text-xs text-fg-muted">
+            Recalculate SG and Tiger 5 for all completed rounds using the current
+            baselines. Run this after a baseline update to refresh older rounds.
+          </div>
+          <button
+            type="button"
+            onClick={runRecompute}
+            disabled={recomputing}
+            className={cn(
+              "mt-3 flex items-center gap-1.5 rounded-md border border-border bg-bg px-3 py-1.5 text-xs",
+              recomputing ? "text-fg-faint" : "text-fg active:bg-bg-muted",
+            )}
+          >
+            <Calculator size={12} className={cn(recomputing && "animate-pulse")} />
+            {recomputing ? "Recomputing…" : "Recompute all SG"}
+          </button>
+          {recomputeMsg && <div className="mt-2 text-[11px] text-fg-muted">{recomputeMsg}</div>}
         </div>
       </section>
 

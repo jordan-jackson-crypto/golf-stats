@@ -45,9 +45,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <div className="mx-auto max-w-md">{children}</div>;
   }
 
-  // Full-viewport routes: shot entry (no tab bar)
-  const isFullViewport = /^\/rounds\/[^/]+$/.test(pathname) && !pathname.endsWith("/summary");
-  if (isFullViewport) {
+  // Full-viewport routes (no tab bar): shot entry + practice game detail,
+  // both of which have their own sticky bottom action bar.
+  const isRoundEntry = /^\/rounds\/[^/]+$/.test(pathname) && !pathname.endsWith("/summary");
+  const isGameDetail = /^\/practice\/[^/]+$/.test(pathname);
+  if (isRoundEntry || isGameDetail) {
     return <div className="mx-auto max-w-md">{children}</div>;
   }
 
