@@ -1,15 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthProvider";
+import { setOfflineMode } from "@/lib/auth/offline";
 import { cn } from "@/lib/utils";
-import { Mail, CheckCircle2 } from "lucide-react";
+import { Mail, CheckCircle2, CloudOff } from "lucide-react";
 
 export default function LoginPage() {
   const { signInWithMagicLink } = useAuth();
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
+
+  // "Failed to fetch" means the server is unreachable (project paused / offline).
+  const serverUnreachable = status === "error" && /failed to fetch|networkerror|load failed/i.test(errorMsg);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,6 +28,11 @@ export default function LoginPage() {
     } else {
       setStatus("sent");
     }
+  };
+
+  const continueOffline = () => {
+    setOfflineMode(true);
+    router.replace("/rounds");
   };
 
   return (
@@ -67,7 +78,11 @@ export default function LoginPage() {
                 />
               </div>
               {status === "error" && (
-                <div className="mt-1.5 text-xs text-sg-loss">{errorMsg}</div>
+                <div className="mt-1.5 text-xs text-sg-loss">
+                  {serverUnreachable
+                    ? "Can't reach the server — it may be asleep. You can keep using the app offline."
+                    : errorMsg}
+                </div>
               )}
             </div>
             <button
@@ -82,8 +97,25 @@ export default function LoginPage() {
             >
               {status === "sending" ? "Sending…" : "Send magic link"}
             </button>
+
+            {/* Offline escape hatch — always available, emphasized when the
+                server is unreachable so a paused DB never locks you out. */}
+            <button
+              type="button"
+              onClick={continueOffline}
+              className={cn(
+                "flex w-full items-center justify-center gap-1.5 rounded-lg border py-2.5 text-xs font-medium",
+                serverUnreachable
+                  ? "border-amber-500/60 bg-amber-500/10 text-amber-500"
+                  : "border-border text-fg-muted active:bg-bg-muted",
+              )}
+            >
+              <CloudOff size={13} />
+              Continue offline
+            </button>
+
             <p className="text-center text-[11px] text-fg-faint">
-              No password. No sign-up. Just tap the link in your email.
+              No password. No sign-up. Offline mode uses data saved on this device.
             </p>
           </form>
         )}

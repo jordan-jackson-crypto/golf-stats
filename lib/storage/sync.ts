@@ -28,6 +28,23 @@ import {
 import type { StoredRound, StoredShot, StoredCourse } from "./types";
 import type { GameSession } from "@/lib/practice/types";
 
+// ---------- Heartbeat / reachability ----------
+
+/**
+ * Fire a tiny real database query to (a) reset Supabase's 7-day inactivity
+ * pause timer and (b) confirm the project is reachable. Returns true if the
+ * DB responded. Never throws.
+ */
+export async function heartbeat(): Promise<boolean> {
+  if (!getCurrentUserId()) return false;
+  try {
+    const { error } = await supabase.from("rounds").select("id").limit(1);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
 // ---------- Round sync (best-effort, non-throwing) ----------
 
 export async function pushRound(round: StoredRound): Promise<void> {
