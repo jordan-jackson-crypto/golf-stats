@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { listRounds } from "@/lib/storage";
+import { listRounds, listAllShots } from "@/lib/storage";
 import type { StoredRound } from "@/lib/storage/types";
 import { cn, fmtSG, sgColorClass } from "@/lib/utils";
 import { BENCHMARKS, LEVEL_LABEL, type SkillLevel } from "@/lib/benchmarks";
 import { TIGER5_TARGETS_ONE_HCP } from "@/lib/tiger5";
+import { analyzeShots, type ShotAnalysis, type BandStat } from "@/lib/stats/shotAnalysis";
 
 const CATEGORIES = [
   { key: "sgOTT" as const, benchKey: "ott" as const, label: "Off the Tee", short: "OTT", help: "Tee shots on par 4/5 — mostly driver. 0 = Tour average." },
@@ -16,10 +17,16 @@ const CATEGORIES = [
 
 export default function StatsPage() {
   const [rounds, setRounds] = useState<StoredRound[] | null>(null);
+  const [analysis, setAnalysis] = useState<ShotAnalysis | null>(null);
   const [target, setTarget] = useState<SkillLevel>("scratch");
 
   useEffect(() => {
-    listRounds().then((all) => setRounds(all.filter((r) => r.status === "complete")));
+    (async () => {
+      const all = await listRounds();
+      setRounds(all.filter((r) => r.status === "complete"));
+      const shots = await listAllShots();
+      setAnalysis(analyzeShots(shots, all));
+    })();
   }, []);
 
   const avg = useMemo(() => {
@@ -168,10 +175,88 @@ export default function StatsPage() {
         </>
       )}
 
+      {/* SG by approach distance — the key diagnostic */}
+      {analysis && analysis.totalApproachShots > 0 && (
+        <>
+          <h2 className="mt-6 mb-1 text-sm font-semibold uppercase tracking-wide text-fg-muted">
+            SG by approach distance
+          </h2>
+          <p className="mb-2 text-[11px] text-fg-faint">
+            Avg strokes gained per shot vs Tour, by distance to the pin. Your biggest leaks live here.
+          </p>
+          <BandChart bands={analysis.approachByDistance} unit="/shot" />
+        </>
+      )}
+
+      {/* Approach SG by lie */}
+      {analysis && analysis.approachByLie.some((b) => b.shots > 0) && (
+        <>
+          <h2 className="mt-6 mb-2 text-sm font-semibold uppercase tracking-wide text-fg-muted">
+            Approach SG by lie
+          </h2>
+          <BandChart bands={analysis.approachByLie.filter((b) => b.shots > 0)} unit="/shot" />
+        </>
+      )}
+
+      {/* Putting SG by distance */}
+      {analysis && analysis.totalPutts > 0 && (
+        <>
+          <h2 className="mt-6 mb-2 text-sm font-semibold uppercase tracking-wide text-fg-muted">
+            Putting SG by distance
+          </h2>
+          <BandChart bands={analysis.puttingByDistance} unit="/shot" />
+        </>
+      )}
+
       {/* What SG means */}
       <div className="mt-6 rounded-lg border border-border bg-bg-raised p-3 text-[11px] leading-relaxed text-fg-muted">
         <div className="mb-1 font-semibold uppercase tracking-wide text-fg-faint">What SG means</div>
         Strokes Gained measures each shot against the expected number of strokes a PGA Tour pro would take from that lie + distance. Positive = better than tour. Negative = worse. Scratch amateur avg ≈ {BENCHMARKS.scratch.total.toFixed(1)} SG total per round vs Tour.
+      </div>
+    </div>
+  );
+}
+
+// ---------- distance-band chart ----------
+
+function BandChart({ bands, unit }: { bands: BandStat[]; unit: string }) {
+  // Symmetric diverging bar around 0, scaled to the largest magnitude present.
+  const maxMag = Math.max(0.25, ...bands.map((b) => Math.abs(b.avgSG)));
+  return (
+    <div className="space-y-1.5">
+      {bands.map((b) => {
+        const hasData = b.shots > 0;
+        const frac = hasData ? Math.min(1, Math.abs(b.avgSG) / maxMag) : 0;
+        const isGain = b.avgSG >= 0;
+        return (
+          <div key={b.key} className="flex items-center gap-2">
+            <div className="num w-16 shrink-0 text-right text-[11px] text-fg-muted">{b.label}</div>
+            {/* diverging bar: center line, gain right / loss left */}
+            <div className="relative h-5 flex-1 rounded bg-bg-raised">
+              <div className="absolute left-1/2 top-0 h-full w-px bg-border-strong" />
+              {hasData && (
+                <div
+                  className={cn("absolute top-1/2 h-3 -translate-y-1/2 rounded", isGain ? "bg-sg-gain" : "bg-sg-loss")}
+                  style={{
+                    width: `${frac * 50}%`,
+                    left: isGain ? "50%" : undefined,
+                    right: isGain ? undefined : "50%",
+                  }}
+                />
+              )}
+            </div>
+            <div className={cn("num w-12 shrink-0 text-right text-[11px]", sgColorClass(b.avgSG))}>
+              {hasData ? fmtSG(b.avgSG) : "—"}
+            </div>
+            <div className="num w-6 shrink-0 text-right text-[9px] text-fg-faint">{b.shots || ""}</div>
+          </div>
+        );
+      })}
+      <div className="flex items-center gap-2 pt-0.5">
+        <div className="w-16 shrink-0" />
+        <div className="flex-1 text-center text-[9px] text-fg-faint">← losing · Tour avg · gaining →</div>
+        <div className="w-12 shrink-0 text-right text-[9px] text-fg-faint">SG{unit}</div>
+        <div className="w-6 shrink-0 text-right text-[9px] text-fg-faint">n</div>
       </div>
     </div>
   );

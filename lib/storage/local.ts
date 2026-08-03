@@ -148,6 +148,12 @@ export async function getShotsForRound(roundId: string): Promise<StoredShot[]> {
   });
 }
 
+/** All shots across all rounds, each tagged with its roundId. */
+export async function listAllShots(): Promise<(StoredShot & { roundId: string })[]> {
+  const db = await getDB();
+  return db.getAll("shots");
+}
+
 // ---------- metrics ----------
 
 export async function saveMetrics(metrics: EntryMetrics): Promise<void> {

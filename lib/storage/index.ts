@@ -17,6 +17,7 @@ import type { GameSession } from "@/lib/practice/types";
 export const getRound = local.getRound;
 export const listRounds = local.listRounds;
 export const getShotsForRound = local.getShotsForRound;
+export const listAllShots = local.listAllShots;
 export const listCourses = local.listCourses;
 export const getMetrics = local.getMetrics;
 export const listGameSessions = local.listGameSessions;
