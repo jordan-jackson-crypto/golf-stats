@@ -1,13 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { GAMES } from "@/lib/practice/games";
 import type { GameArea } from "@/lib/practice/types";
 import { listGameSessions } from "@/lib/storage";
 import type { GameSession } from "@/lib/practice/types";
+import { generatePracticeInsights, type PracticeInsight, type PracticeInsightSeverity } from "@/lib/practice/insights";
 import { cn } from "@/lib/utils";
-import { Target, Flag, Wind, ChevronRight, TrendingUp, ListChecks } from "lucide-react";
+import {
+  Target, Flag, Wind, ChevronRight, TrendingUp, TrendingDown,
+  AlertTriangle, CheckCircle2, CalendarClock, Info,
+} from "lucide-react";
 
 const AREAS: { key: GameArea; label: string; icon: React.ReactNode }[] = [
   { key: "putting", label: "Putting", icon: <Target size={16} /> },
@@ -22,6 +26,11 @@ export default function PracticePage() {
   useEffect(() => {
     listGameSessions().then(setSessions);
   }, []);
+
+  const practiceInsights = useMemo(
+    () => generatePracticeInsights(sessions, Date.now()),
+    [sessions],
+  );
 
   const games = GAMES.filter((g) => g.area === area);
 
@@ -40,20 +49,17 @@ export default function PracticePage() {
         </div>
       </div>
 
-      {/* Checklist link */}
-      <Link
-        href="/practice/checklist"
-        className="mb-4 flex items-center justify-between rounded-xl border border-border bg-bg-raised p-3 active:bg-bg-muted"
-      >
-        <div className="flex items-center gap-2.5">
-          <ListChecks size={18} className="text-primary" />
-          <div>
-            <div className="text-sm font-semibold text-fg">Practice Checklist</div>
-            <div className="text-[11px] text-fg-faint">Technical work + games session plan</div>
+      {/* Practice Insights */}
+      {practiceInsights.length > 0 && (
+        <div className="mb-5">
+          <h2 className="mb-2 text-[11px] uppercase tracking-wide text-fg-faint">Practice insights</h2>
+          <div className="space-y-2">
+            {practiceInsights.slice(0, 5).map((ins) => (
+              <PracticeInsightCard key={ins.id} insight={ins} />
+            ))}
           </div>
         </div>
-        <ChevronRight size={16} className="text-fg-faint" />
-      </Link>
+      )}
 
       {/* Area tabs */}
       <div className="mb-4 grid grid-cols-3 gap-1.5">
@@ -138,4 +144,45 @@ export default function PracticePage() {
 
 function scoreIsGood(score: number, target: number, higherIsBetter: boolean): boolean {
   return higherIsBetter ? score >= target : score <= target;
+}
+
+function PracticeInsightCard({ insight }: { insight: PracticeInsight }) {
+  const { icon, border, chip } = practiceStyle(insight.severity);
+  return (
+    <div className={cn("rounded-xl border p-3", border)}>
+      <div className="flex items-start gap-2.5">
+        <div className={cn("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full", chip)}>
+          {icon}
+        </div>
+        <div className="flex-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <h3 className="text-sm font-semibold text-fg">{insight.headline}</h3>
+            {insight.metric && (
+              <span className="num shrink-0 rounded-md bg-bg px-1.5 py-0.5 text-[10px] text-fg-muted">
+                {insight.metric}
+              </span>
+            )}
+          </div>
+          <p className="mt-0.5 text-xs leading-relaxed text-fg-muted">{insight.body}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function practiceStyle(sev: PracticeInsightSeverity): { icon: React.ReactNode; border: string; chip: string } {
+  switch (sev) {
+    case "weakness":
+      return { icon: <AlertTriangle size={14} className="text-sg-loss" />, border: "border-sg-loss/40 bg-sg-loss/5", chip: "bg-sg-loss/20" };
+    case "trend-down":
+      return { icon: <TrendingDown size={14} className="text-amber-500" />, border: "border-amber-500/40 bg-amber-500/5", chip: "bg-amber-500/20" };
+    case "gap":
+      return { icon: <CalendarClock size={14} className="text-amber-500" />, border: "border-amber-500/40 bg-amber-500/5", chip: "bg-amber-500/20" };
+    case "trend-up":
+      return { icon: <TrendingUp size={14} className="text-sg-gain" />, border: "border-sg-gain/40 bg-sg-gain/5", chip: "bg-sg-gain/20" };
+    case "strength":
+      return { icon: <CheckCircle2 size={14} className="text-sg-gain" />, border: "border-sg-gain/40 bg-sg-gain/5", chip: "bg-sg-gain/20" };
+    default:
+      return { icon: <Info size={14} className="text-fg-muted" />, border: "border-border bg-bg-raised", chip: "bg-bg" };
+  }
 }

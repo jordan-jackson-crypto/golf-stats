@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { CircleDot, BarChart3, Lightbulb, Target } from "lucide-react";
+import { CircleDot, BarChart3, Lightbulb, Target, Compass } from "lucide-react";
 
 const TABS = [
   { href: "/rounds", label: "Rounds", icon: CircleDot },
   { href: "/stats", label: "Stats", icon: BarChart3 },
   { href: "/insights", label: "Insights", icon: Lightbulb },
   { href: "/practice", label: "Practice", icon: Target },
+  { href: "/prep", label: "Prep", icon: Compass },
 ] as const;
 
 export function TabBar() {
@@ -17,7 +18,7 @@ export function TabBar() {
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-bg-raised pb-safe">
-      <ul className="mx-auto grid max-w-md grid-cols-4">
+      <ul className="mx-auto grid max-w-md grid-cols-5">
         {TABS.map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname.startsWith(href + "/");
           return (
