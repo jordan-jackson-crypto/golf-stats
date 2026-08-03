@@ -16,6 +16,7 @@ export default function GamePage() {
 
   const [sessions, setSessions] = useState<GameSession[]>([]);
   const [stationScores, setStationScores] = useState<Record<string, number>>({});
+  const [outcomeCounts, setOutcomeCounts] = useState<Record<string, number>>({});
   const [flatScore, setFlatScore] = useState(0);
   const [saving, setSaving] = useState(false);
 
@@ -23,11 +24,22 @@ export default function GamePage() {
   useEffect(() => { refresh(); }, [gameId]);
 
   const hasStations = !!game?.stations?.length;
+  const hasOutcomes = !!game?.outcomes?.length;
+
   const totalFromStations = useMemo(
     () => Object.values(stationScores).reduce((a, b) => a + (b || 0), 0),
     [stationScores],
   );
-  const score = hasStations ? totalFromStations : flatScore;
+  const totalFromOutcomes = useMemo(() => {
+    if (!game?.outcomes) return 0;
+    return game.outcomes.reduce((sum, o) => sum + (outcomeCounts[o.key] ?? 0) * o.points, 0);
+  }, [outcomeCounts, game]);
+  const shotsTallied = useMemo(
+    () => Object.values(outcomeCounts).reduce((a, b) => a + (b || 0), 0),
+    [outcomeCounts],
+  );
+
+  const score = hasStations ? totalFromStations : hasOutcomes ? totalFromOutcomes : flatScore;
 
   if (!game) {
     return (
@@ -42,6 +54,10 @@ export default function GamePage() {
     setStationScores((prev) => ({ ...prev, [key]: Math.max(0, Math.min(max, val)) }));
   };
 
+  const setOutcome = (key: string, val: number) => {
+    setOutcomeCounts((prev) => ({ ...prev, [key]: Math.max(0, val) }));
+  };
+
   const save = async () => {
     setSaving(true);
     const session: GameSession = {
@@ -51,10 +67,11 @@ export default function GamePage() {
       createdAt: Date.now(),
       score,
       maxPoints: game.maxPoints,
-      stationScores: hasStations ? stationScores : undefined,
+      stationScores: hasStations ? stationScores : hasOutcomes ? outcomeCounts : undefined,
     };
     await saveGameSession(session);
     setStationScores({});
+    setOutcomeCounts({});
     setFlatScore(0);
     await refresh();
     setSaving(false);
@@ -152,6 +169,56 @@ export default function GamePage() {
               <span className="num text-lg font-semibold">{score} / {game.maxPoints}</span>
             </div>
           </div>
+        ) : hasOutcomes ? (
+          <div className="space-y-2">
+            {game.outcomes!.map((o) => (
+              <div
+                key={o.key}
+                className="flex items-center justify-between rounded-lg border border-border bg-bg-raised px-3 py-2"
+              >
+                <div className="flex-1 pr-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm text-fg">{o.label}</span>
+                    <span
+                      className={cn(
+                        "num rounded px-1 text-[10px] font-medium",
+                        o.points > 0 ? "bg-sg-gain/20 text-sg-gain"
+                          : o.points < 0 ? "bg-sg-loss/20 text-sg-loss"
+                          : "bg-bg text-fg-faint",
+                      )}
+                    >
+                      {o.points > 0 ? `+${o.points}` : o.points}
+                    </span>
+                  </div>
+                  {o.hint && <div className="text-[10px] text-fg-faint">{o.hint}</div>}
+                </div>
+                <Stepper
+                  value={outcomeCounts[o.key] ?? 0}
+                  max={game.shotsPerRound ?? 99}
+                  onChange={(v) => setOutcome(o.key, v)}
+                />
+              </div>
+            ))}
+            <div className="flex items-center justify-between rounded-lg bg-bg-muted px-3 py-2">
+              <div>
+                <span className="text-xs uppercase tracking-wide text-fg-faint">Total</span>
+                {game.shotsPerRound && (
+                  <span
+                    className={cn(
+                      "num ml-2 text-[10px]",
+                      shotsTallied === game.shotsPerRound ? "text-sg-gain" : "text-fg-faint",
+                    )}
+                  >
+                    {shotsTallied}/{game.shotsPerRound} shots
+                  </span>
+                )}
+              </div>
+              <span className="num text-lg font-semibold">
+                {score > 0 ? "+" : ""}{score}
+                <span className="text-fg-faint"> / {game.targetPoints}</span>
+              </span>
+            </div>
+          </div>
         ) : (
           <div className="flex items-center justify-between rounded-lg border border-border bg-bg-raised px-3 py-3">
             <div>
@@ -161,6 +228,13 @@ export default function GamePage() {
               </div>
             </div>
             <Stepper value={flatScore} max={game.maxPoints} onChange={setFlatScore} />
+          </div>
+        )}
+
+        {game.whyItMatters && (
+          <div className="mt-3 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2">
+            <div className="mb-0.5 text-[10px] uppercase tracking-wide text-accent">Why it matters</div>
+            <p className="text-[11px] leading-relaxed text-fg-muted">{game.whyItMatters}</p>
           </div>
         )}
       </div>

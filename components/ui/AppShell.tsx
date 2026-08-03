@@ -72,6 +72,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isRoundEntry = /^\/rounds\/[^/]+$/.test(pathname) && !pathname.endsWith("/summary");
   const isGameDetail = /^\/practice\/[^/]+$/.test(pathname);
   if (isRoundEntry || isGameDetail) {
+    // Note: /practice/checklist and /practice/[gameId] both match — both want
+    // full viewport, so no special-casing needed.
     return <div className="mx-auto max-w-md">{children}</div>;
   }
 

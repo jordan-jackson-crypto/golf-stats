@@ -1,34 +1,52 @@
 /**
  * Practice games — points-based drills you play and track over sessions.
  *
- * A GameDef is the static definition (rules, scoring, max points).
+ * A GameDef is the static definition (rules, scoring, targets).
  * A GameSession is one recorded attempt with a final score.
+ *
+ * Three entry modes:
+ *  - stations : per-station make counts (e.g. Clock Drill rings)
+ *  - outcomes : tally shots into point buckets (e.g. Driver: fairway +1, miss -1)
+ *  - flat     : a single number, usually total strokes (lower is better)
  */
 
 export type GameArea = "putting" | "short-game" | "ball-striking";
-
-export interface GameDef {
-  id: string;
-  area: GameArea;
-  name: string;
-  tagline: string; // one-line hook
-  source?: string; // e.g. "Scott Fawcett", "DECADE" — drills/games can be from anywhere
-  description: string;
-  howToScore: string;
-  /** Max achievable points (for progress bars / % scoring). */
-  maxPoints: number;
-  /** A "good" target score for a scratch-level player. */
-  targetPoints: number;
-  /** Optional structured stations the user fills in (e.g. distances). */
-  stations?: GameStation[];
-  /** Higher score is better (default). Set false for games where lower wins. */
-  higherIsBetter?: boolean;
-}
 
 export interface GameStation {
   key: string;
   label: string; // e.g. "3 ft"
   maxPer: number; // max points at this station
+}
+
+export interface GameOutcome {
+  key: string;
+  label: string; // e.g. "Fairway", "Inside 6 ft"
+  points: number; // can be negative
+  hint?: string; // short qualifier
+}
+
+export interface GameDef {
+  id: string;
+  area: GameArea;
+  name: string;
+  tagline: string;
+  source?: string;
+  description: string;
+  howToScore: string;
+  /** Theoretical ceiling — for progress bars / context. */
+  maxPoints: number;
+  /** A "good" target score for a scratch-level player. */
+  targetPoints: number;
+  /** Number of shots/reps in one round of the game (for outcome games). */
+  shotsPerRound?: number;
+  /** Per-station make counts. */
+  stations?: GameStation[];
+  /** Outcome buckets (tally mode). */
+  outcomes?: GameOutcome[];
+  /** Higher score is better (default true). Set false when lower wins. */
+  higherIsBetter?: boolean;
+  /** Why this game matters, tied to scoring / strokes gained. */
+  whyItMatters?: string;
 }
 
 export interface GameSession {
@@ -39,7 +57,7 @@ export interface GameSession {
   createdAt: number;
   score: number;
   maxPoints: number;
-  /** Per-station breakdown if the game has stations. */
+  /** Per-station or per-outcome breakdown, keyed by station/outcome key. */
   stationScores?: Record<string, number>;
   notes?: string;
 }

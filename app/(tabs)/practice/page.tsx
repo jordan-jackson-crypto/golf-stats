@@ -7,7 +7,7 @@ import type { GameArea } from "@/lib/practice/types";
 import { listGameSessions } from "@/lib/storage";
 import type { GameSession } from "@/lib/practice/types";
 import { cn } from "@/lib/utils";
-import { Target, Flag, Wind, ChevronRight, TrendingUp } from "lucide-react";
+import { Target, Flag, Wind, ChevronRight, TrendingUp, ListChecks } from "lucide-react";
 
 const AREAS: { key: GameArea; label: string; icon: React.ReactNode }[] = [
   { key: "putting", label: "Putting", icon: <Target size={16} /> },
@@ -39,6 +39,21 @@ export default function PracticePage() {
           {sessions.length} logged
         </div>
       </div>
+
+      {/* Checklist link */}
+      <Link
+        href="/practice/checklist"
+        className="mb-4 flex items-center justify-between rounded-xl border border-border bg-bg-raised p-3 active:bg-bg-muted"
+      >
+        <div className="flex items-center gap-2.5">
+          <ListChecks size={18} className="text-primary" />
+          <div>
+            <div className="text-sm font-semibold text-fg">Practice Checklist</div>
+            <div className="text-[11px] text-fg-faint">Technical work + games session plan</div>
+          </div>
+        </div>
+        <ChevronRight size={16} className="text-fg-faint" />
+      </Link>
 
       {/* Area tabs */}
       <div className="mb-4 grid grid-cols-3 gap-1.5">
