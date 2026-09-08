@@ -12,6 +12,7 @@
  */
 
 import type { StoredRound, StoredShot } from "@/lib/storage/types";
+import { resolveHoleStats } from "@/lib/stats/traditional";
 
 export interface Tiger5Counts {
   doubleBogeys: number;
@@ -33,8 +34,13 @@ export const TIGER5_TARGETS_ONE_HCP: Tiger5Counts = {
   blownParSaves: 1,
 };
 
+/**
+ * Counts 1–3 work off the hole score and putt count, so they are right even on
+ * a score-only round. Counts 4–5 need shot detail (they depend on approach
+ * distance and putt length) and are only incremented for holes that have it.
+ */
 export function computeTiger5(
-  round: Pick<StoredRound, "parPerHole" | "holeCount">,
+  round: Pick<StoredRound, "parPerHole" | "holeCount" | "holeScores" | "holeStatsByHole">,
   shots: StoredShot[],
 ): Tiger5Counts {
   const shotsByHole = new Map<number, StoredShot[]>();
@@ -52,13 +58,17 @@ export function computeTiger5(
   };
 
   const holeCount = round.holeCount ?? 18;
+  const holeScores = round.holeScores ?? [];
+  const holeStats = round.holeStatsByHole ?? [];
+
   for (let hole = 1; hole <= holeCount; hole++) {
     const par = round.parPerHole[hole - 1];
     const holeShots = (shotsByHole.get(hole) ?? []).sort((a, b) => a.shotNumber - b.shotNumber);
-    if (holeShots.length === 0) continue;
 
     const penalties = holeShots.filter((s) => s.penalty).length;
-    const score = holeShots.length + penalties;
+    // Prefer the entered score; fall back to the shot count.
+    const score = holeScores[hole - 1] || (holeShots.length ? holeShots.length + penalties : 0);
+    if (!score) continue;
 
     // 1. Double bogey (or worse)
     if (score >= par + 2) counts.doubleBogeys++;
@@ -66,9 +76,11 @@ export function computeTiger5(
     // 2. Par-5 bogey or worse
     if (par === 5 && score >= par + 1) counts.par5BogeysOrWorse++;
 
-    // 3. Three-putt: 3+ shots from the green
-    const putts = holeShots.filter((s) => s.startLie === "green").length;
-    if (putts >= 3) counts.threePutts++;
+    // 3. Three-putt — entered putt count, else shots played from the green.
+    const putts = resolveHoleStats(holeStats[hole - 1], holeShots, par).putts;
+    if (putts != null && putts >= 3) counts.threePutts++;
+
+    if (holeShots.length === 0) continue; // 4 and 5 need shot detail
 
     // 4. Bogey from 150 or in — approach began within 150 yards of green and hole was bogeyed
     if (score === par + 1) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, X, Plus, Minus, ArrowRight } from "lucide-react";
 import {
@@ -11,7 +11,7 @@ import {
   deleteShot,
   saveRound,
 } from "@/lib/storage";
-import type { StoredRound, StoredShot, UnforcedErrors } from "@/lib/storage/types";
+import type { StoredRound, StoredShot, UnforcedErrors, HoleStats } from "@/lib/storage/types";
 import type { Lie } from "@/lib/sg/types";
 import { scoreShots } from "@/lib/entry/scoreDraft";
 import { finalizeRound } from "@/lib/entry/finalizeRound";
@@ -19,6 +19,8 @@ import { ParCirclePicker } from "@/components/entry/ParCirclePicker";
 import { ScoreStepper } from "@/components/entry/ScoreStepper";
 import { ShotTable } from "@/components/entry/ShotTable";
 import { UnforcedErrorsList } from "@/components/entry/UnforcedErrorsList";
+import { HoleStatsRow } from "@/components/entry/HoleStatsRow";
+import { deriveFromShots } from "@/lib/stats/traditional";
 import { CelebrationCard } from "@/components/entry/CelebrationCard";
 import { cn, fmtSG, sgColorClass } from "@/lib/utils";
 
@@ -28,6 +30,12 @@ export default function RoundEntryPage() {
   const roundId = params.id;
 
   const [round, setRound] = useState<StoredRound | null>(null);
+  /**
+   * Always-current copy of the round. Tapping fairway → green → putts (or
+   * several mistake tags) fires a burst of saves faster than React re-renders;
+   * reading the patch base from state would let each tap overwrite the last.
+   */
+  const roundRef = useRef<StoredRound | null>(null);
   const [allShots, setAllShots] = useState<StoredShot[]>([]);
   const [hole, setHole] = useState(1);
   const [logShots, setLogShots] = useState(false);
@@ -40,6 +48,7 @@ export default function RoundEntryPage() {
         const r = await getRound(roundId);
         if (!r) return;
         setRound(r);
+        roundRef.current = r;
         const shots = await getShotsForRound(roundId);
         setAllShots(shots);
         // Resume where the user left off — last hole they entered anything on
@@ -78,6 +87,7 @@ export default function RoundEntryPage() {
   const parPerHole = parPerHoleSafe;
   const holeScores = holeScoresSafe;
   const errors = round.unforcedErrorsByHole ?? Array(holeCount).fill({});
+  const holeStats: HoleStats[] = round.holeStatsByHole ?? Array(holeCount).fill({});
   const par = (parPerHole[hole - 1] ?? 4) as 3 | 4 | 5;
   const scoreValue = holeScores[hole - 1] || 0;
   const holeShotsRaw = allShots
@@ -88,31 +98,49 @@ export default function RoundEntryPage() {
 
   // ---------- persistence helpers ----------
 
-  const persistRound = async (patch: Partial<StoredRound>) => {
-    const next = { ...round, ...patch, updatedAt: Date.now() };
+  const persistRound = async (patch: Partial<StoredRound> | ((r: StoredRound) => Partial<StoredRound>)) => {
+    const base = roundRef.current ?? round;
+    const next = { ...base, ...(typeof patch === "function" ? patch(base) : patch), updatedAt: Date.now() };
+    roundRef.current = next;
     setRound(next);
     await saveRound(next);
   };
 
   const setPar = async (p: 3 | 4 | 5) => {
-    const next = [...parPerHole];
-    next[hole - 1] = p;
-    const confirmed = Array.from(new Set([...(round.parConfirmedHoles ?? []), hole]));
-    await persistRound({ parPerHole: next, parConfirmedHoles: confirmed });
+    await persistRound((r) => {
+      const next = [...(r.parPerHole ?? Array(holeCount).fill(4))];
+      next[hole - 1] = p;
+      return {
+        parPerHole: next,
+        parConfirmedHoles: Array.from(new Set([...(r.parConfirmedHoles ?? []), hole])),
+      };
+    });
   };
 
   const setScore = async (n: number) => {
-    const next = [...holeScores];
-    next[hole - 1] = n;
-    await persistRound({ holeScores: next });
+    await persistRound((r) => {
+      const next = [...(r.holeScores ?? Array(holeCount).fill(0))];
+      next[hole - 1] = n;
+      return { holeScores: next };
+    });
     // If shot detail is expanded, resize the shot list to match
     if (logShots) await resizeShots(n);
   };
 
-  const setErrors = async (next: UnforcedErrors) => {
-    const arr = [...errors];
-    arr[hole - 1] = next;
-    await persistRound({ unforcedErrorsByHole: arr });
+  const setErrors = async (update: (cur: UnforcedErrors) => UnforcedErrors) => {
+    await persistRound((r) => {
+      const arr = [...(r.unforcedErrorsByHole ?? Array(holeCount).fill({}))];
+      arr[hole - 1] = update(arr[hole - 1] ?? {});
+      return { unforcedErrorsByHole: arr };
+    });
+  };
+
+  const setHoleStats = async (update: (cur: HoleStats) => HoleStats) => {
+    await persistRound((r) => {
+      const arr = [...(r.holeStatsByHole ?? Array(holeCount).fill({}))];
+      arr[hole - 1] = update(arr[hole - 1] ?? {});
+      return { holeStatsByHole: arr };
+    });
   };
 
   // Reshape stored shots for this hole to have exactly `count` entries.
@@ -302,6 +330,24 @@ export default function RoundEntryPage() {
           )}
         </div>
 
+        {/* Fairway / green / putts — the traditional stats, three taps */}
+        {scoreValue > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-baseline justify-between">
+              <h2 className="text-sm font-semibold">Hole stats</h2>
+              <span className="text-[10px] uppercase tracking-wide text-fg-faint">
+                fairway · green · putts
+              </span>
+            </div>
+            <HoleStatsRow
+              value={holeStats[hole - 1] ?? {}}
+              derived={holeShotsRaw.length ? deriveFromShots(holeShotsRaw, par) : undefined}
+              par={par}
+              onChange={setHoleStats}
+            />
+          </div>
+        )}
+
         {/* Shot detail (optional) */}
         <div>
           <button
@@ -348,7 +394,12 @@ export default function RoundEntryPage() {
               <h2 className="text-sm font-semibold">Unforced errors</h2>
               <span className="text-[10px] uppercase tracking-wide text-fg-faint">tap to flag</span>
             </div>
-            <UnforcedErrorsList value={errors[hole - 1] ?? {}} par={par} onChange={setErrors} />
+            <UnforcedErrorsList
+              key={hole}
+              value={errors[hole - 1] ?? {}}
+              par={par}
+              onChange={setErrors}
+            />
           </div>
         )}
 

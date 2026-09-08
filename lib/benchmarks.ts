@@ -66,3 +66,34 @@ export function describeVsBenchmarks(
   const direction = Math.abs(delta) < 0.1 ? "at" : delta > 0 ? "above" : "below";
   return { level, delta, direction };
 }
+
+/**
+ * Traditional-stat benchmarks, per 18 holes.
+ *
+ * Tour figures are PGA Tour season averages; amateur figures come from Broadie's
+ * amateur sample and Shot Scope's handicap tables. Same caveat as the SG table:
+ * directionally right, not gospel.
+ */
+export interface TraditionalBenchmark {
+  /** Fairways hit, share of par-4/5 tee shots. */
+  fir: number;
+  /** Greens in regulation, share of holes. */
+  gir: number;
+  /** Putts per 18 holes. */
+  putts: number;
+  /** Putts per green hit in regulation. */
+  puttsPerGIR: number;
+  /** Up-and-down rate after missing the green. */
+  scrambling: number;
+  /** Share of holes with 3+ putts. */
+  threePutt: number;
+}
+
+export const TRADITIONAL_BENCHMARKS: Record<SkillLevel, TraditionalBenchmark> = {
+  tour:    { fir: 0.61, gir: 0.66, putts: 29.0, puttsPerGIR: 1.75, scrambling: 0.60, threePutt: 0.025 },
+  scratch: { fir: 0.58, gir: 0.55, putts: 30.5, puttsPerGIR: 1.83, scrambling: 0.50, threePutt: 0.040 },
+  "5hcp":  { fir: 0.52, gir: 0.46, putts: 31.5, puttsPerGIR: 1.87, scrambling: 0.40, threePutt: 0.055 },
+  "10hcp": { fir: 0.47, gir: 0.36, putts: 32.5, puttsPerGIR: 1.90, scrambling: 0.31, threePutt: 0.075 },
+  "15hcp": { fir: 0.42, gir: 0.27, putts: 33.5, puttsPerGIR: 1.93, scrambling: 0.23, threePutt: 0.095 },
+  "20hcp": { fir: 0.37, gir: 0.19, putts: 34.5, puttsPerGIR: 1.96, scrambling: 0.17, threePutt: 0.115 },
+};

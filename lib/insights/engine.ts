@@ -6,6 +6,7 @@
 import type { StoredRound } from "@/lib/storage/types";
 import { BENCHMARKS, LEVEL_LABEL, type SkillLevel } from "@/lib/benchmarks";
 import { TIGER5_TARGETS_ONE_HCP, type Tiger5Counts } from "@/lib/tiger5";
+import { buildMentalLibrary } from "@/lib/mental";
 
 export type InsightSeverity = "critical" | "warning" | "positive" | "info";
 
@@ -170,6 +171,44 @@ export function bestWorstRounds(rounds: StoredRound[]): Insight[] {
 }
 
 /**
+ * Mental mistakes — the pattern behind the flags, not just the count.
+ * Reads whatever has been tagged on the hole and surfaces the tag costing the
+ * most strokes, with its cue.
+ */
+export function mentalMistakeInsight(rounds: StoredRound[]): Insight | null {
+  const lib = buildMentalLibrary(rounds);
+  if (lib.totalFlagged === 0) return null;
+
+  const perRound = lib.perRound;
+  const top = lib.tagStats[0];
+
+  // Untagged flags — nudge toward tagging, since the library needs the tags.
+  if (!top) {
+    return {
+      id: "mental-untagged",
+      severity: "info",
+      headline: `${lib.totalFlagged} mental mistakes flagged, none tagged`,
+      body: `You're averaging ${perRound.toFixed(1)} per round but haven't tagged what kind they were. Tag them on the hole and the library will tell you which one is actually costing you.`,
+      metric: `${perRound.toFixed(1)} / round`,
+    };
+  }
+
+  const costLine =
+    lib.baselineToPar != null && top.avgToPar != null
+      ? ` Those holes play ${top.avgToPar.toFixed(1)} over par vs ${lib.baselineToPar.toFixed(1)} on your clean holes.`
+      : "";
+
+  return {
+    id: "mental-" + top.tag,
+    severity: perRound >= 1.5 || top.strokesOverPar >= 4 ? "critical" : "warning",
+    headline: `Top mental leak: ${top.meta.label}`,
+    body: `${top.count} of your ${lib.totalFlagged} flagged holes (${Math.round(top.share * 100)}%) were "${top.meta.label.toLowerCase()}".${costLine} ${top.meta.cost}`,
+    metric: `${perRound.toFixed(1)} / round`,
+    targetHelp: top.meta.cue,
+  };
+}
+
+/**
  * Top-level insights ordering.
  */
 export function generateInsights(rounds: StoredRound[], target: SkillLevel = "scratch"): Insight[] {
@@ -178,6 +217,8 @@ export function generateInsights(rounds: StoredRound[], target: SkillLevel = "sc
   if (leak) insights.push(leak);
   const tigerTop = tiger5TopOffender(rounds);
   if (tigerTop) insights.push(tigerTop);
+  const mental = mentalMistakeInsight(rounds);
+  if (mental) insights.push(mental);
   insights.push(...trendAlerts(rounds));
   insights.push(...bestWorstRounds(rounds));
   return insights;

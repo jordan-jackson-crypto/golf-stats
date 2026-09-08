@@ -9,6 +9,8 @@ import type { StoredRound, StoredShot, EntryMetrics } from "@/lib/storage/types"
 import { scoreShots } from "@/lib/entry/scoreDraft";
 import { cn, fmtSG, sgColorClass } from "@/lib/utils";
 import { TIGER5_TARGETS_ONE_HCP } from "@/lib/tiger5";
+import { roundTotals, withRates } from "@/lib/stats/traditional";
+import { buildMentalLibrary, MENTAL_BY_TAG, PHASE_LABEL } from "@/lib/mental";
 
 export default function RoundSummaryPage() {
   const params = useParams<{ id: string }>();
@@ -43,6 +45,9 @@ export default function RoundSummaryPage() {
   const parPerHole = round.parPerHole ?? Array(holeCount).fill(4);
   const totalPar = parPerHole.slice(0, holeCount).reduce((a, b) => a + b, 0);
   const toPar = (round.totalScore ?? 0) - totalPar;
+
+  const trad = withRates(roundTotals(round, shots));
+  const mental = buildMentalLibrary([round]);
 
   const holeRows = Array.from({ length: holeCount }, (_, i) => {
     const hole = i + 1;
@@ -90,6 +95,63 @@ export default function RoundSummaryPage() {
         <SGBlock label="ARG" v={round.sgARG} />
         <SGBlock label="PUTT" v={round.sgPUTT} />
       </div>
+
+      {(trad.fairwayOpps > 0 || trad.girHoles > 0 || trad.puttHoles > 0) && (
+        <div className="grid grid-cols-4 gap-px border-b border-border bg-border">
+          <SGBlockRaw
+            label="FIR"
+            v={trad.firPct != null ? `${Math.round(trad.firPct * 100)}%` : "—"}
+            sub={`${trad.fairwaysHit}/${trad.fairwayOpps}`}
+          />
+          <SGBlockRaw
+            label="GIR"
+            v={trad.girPct != null ? `${Math.round(trad.girPct * 100)}%` : "—"}
+            sub={`${trad.girHit}/${trad.girHoles}`}
+          />
+          <SGBlockRaw label="Putts" v={trad.putts ? String(trad.putts) : "—"} sub={`${trad.threePutts} × 3-putt`} />
+          <SGBlockRaw
+            label="Scramble"
+            v={trad.scramblingPct != null ? `${Math.round(trad.scramblingPct * 100)}%` : "—"}
+            sub={`${trad.scrambleSaves}/${trad.scrambleOpps}`}
+          />
+        </div>
+      )}
+
+      {mental.totalFlagged > 0 && (
+        <div className="border-b border-border px-3 py-3">
+          <div className="mb-2 flex items-baseline justify-between">
+            <div className="text-[10px] uppercase tracking-wide text-fg-faint">Mental mistakes</div>
+            <div className="num text-[10px] text-sg-loss">
+              {mental.totalFlagged} · +{mental.strokesOverPar} over par
+            </div>
+          </div>
+          <ul className="space-y-1.5">
+            {mental.entries.map((e, i) => (
+              <li key={`${e.hole}-${i}`} className="text-xs">
+                <div className="flex items-baseline gap-2">
+                  <span className="num w-10 shrink-0 text-fg-faint">H{e.hole}</span>
+                  <span className="flex-1 text-fg-muted">
+                    {e.detail.tags.length
+                      ? e.detail.tags.map((t) => MENTAL_BY_TAG[t]?.label ?? t).join(" · ")
+                      : "untagged"}
+                    {e.detail.phase ? ` — ${PHASE_LABEL[e.detail.phase]}` : ""}
+                  </span>
+                  {e.toPar != null && (
+                    <span className={cn("num", e.toPar > 0 ? "text-sg-loss" : "text-sg-gain")}>
+                      {e.toPar > 0 ? `+${e.toPar}` : e.toPar === 0 ? "par" : String(e.toPar)}
+                    </span>
+                  )}
+                </div>
+                {e.detail.note && (
+                  <div className="ml-12 mt-0.5 text-[11px] leading-snug text-fg">
+                    &ldquo;{e.detail.note}&rdquo;
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {round.tiger5 && (
         <div className="border-b border-border px-3 py-3">
@@ -150,6 +212,16 @@ function SGBlock({ label, v }: { label: string; v: number | undefined }) {
       <div className={cn("num text-sm font-medium", sgColorClass(v ?? 0))}>
         {v != null ? fmtSG(v) : "—"}
       </div>
+    </div>
+  );
+}
+
+function SGBlockRaw({ label, v, sub }: { label: string; v: string; sub?: string }) {
+  return (
+    <div className="bg-bg px-2 py-2 text-center">
+      <div className="text-[9px] uppercase tracking-wide text-fg-faint">{label}</div>
+      <div className="num text-sm font-medium text-fg">{v}</div>
+      {sub && <div className="num text-[9px] text-fg-faint">{sub}</div>}
     </div>
   );
 }

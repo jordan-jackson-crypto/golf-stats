@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { listRounds, listAllShots } from "@/lib/storage";
 import type { StoredRound } from "@/lib/storage/types";
 import { cn, fmtSG, sgColorClass } from "@/lib/utils";
-import { BENCHMARKS, LEVEL_LABEL, type SkillLevel } from "@/lib/benchmarks";
+import { BENCHMARKS, LEVEL_LABEL, TRADITIONAL_BENCHMARKS, type SkillLevel } from "@/lib/benchmarks";
 import { TIGER5_TARGETS_ONE_HCP } from "@/lib/tiger5";
 import { analyzeShots, type ShotAnalysis, type BandStat } from "@/lib/stats/shotAnalysis";
+import { aggregateTraditional, type TraditionalStats } from "@/lib/stats/traditional";
 
 const CATEGORIES = [
   { key: "sgOTT" as const, benchKey: "ott" as const, label: "Off the Tee", short: "OTT", help: "Tee shots on par 4/5 — mostly driver. 0 = Tour average." },
@@ -18,6 +19,7 @@ const CATEGORIES = [
 export default function StatsPage() {
   const [rounds, setRounds] = useState<StoredRound[] | null>(null);
   const [analysis, setAnalysis] = useState<ShotAnalysis | null>(null);
+  const [traditional, setTraditional] = useState<TraditionalStats | null>(null);
   const [target, setTarget] = useState<SkillLevel>("scratch");
 
   useEffect(() => {
@@ -26,6 +28,9 @@ export default function StatsPage() {
       setRounds(all.filter((r) => r.status === "complete"));
       const shots = await listAllShots();
       setAnalysis(analyzeShots(shots, all));
+      setTraditional(
+        aggregateTraditional(all.filter((r) => r.status === "complete"), shots),
+      );
     })();
   }, []);
 
@@ -161,6 +166,20 @@ export default function StatsPage() {
         })}
       </div>
 
+      {/* Traditional stats — fairways, greens, putts */}
+      {traditional && (traditional.fairwayOpps > 0 || traditional.girHoles > 0 || traditional.puttHoles > 0) && (
+        <>
+          <h2 className="mt-6 mb-1 text-sm font-semibold uppercase tracking-wide text-fg-muted">
+            Fairways · Greens · Putts
+          </h2>
+          <p className="mb-2 text-[11px] text-fg-faint">
+            The traditional numbers, vs a {LEVEL_LABEL[target].toLowerCase()}. Tapped in on the hole, or
+            derived from your shot detail.
+          </p>
+          <TraditionalGrid stats={traditional} target={target} />
+        </>
+      )}
+
       {/* Tiger 5 */}
       {tiger5Avg && (
         <>
@@ -213,6 +232,110 @@ export default function StatsPage() {
         <div className="mb-1 font-semibold uppercase tracking-wide text-fg-faint">What SG means</div>
         Strokes Gained measures each shot against the expected number of strokes a PGA Tour pro would take from that lie + distance. Positive = better than tour. Negative = worse. Scratch amateur avg ≈ {BENCHMARKS.scratch.total.toFixed(1)} SG total per round vs Tour.
       </div>
+    </div>
+  );
+}
+
+// ---------- traditional stats ----------
+
+function TraditionalGrid({ stats, target }: { stats: TraditionalStats; target: SkillLevel }) {
+  const b = TRADITIONAL_BENCHMARKS[target];
+  const pct = (v: number | null) => (v == null ? null : v * 100);
+  const missTotal = stats.missLeft + stats.missRight;
+
+  const rows: {
+    label: string;
+    value: number | null;
+    bench: number;
+    fmt: (v: number) => string;
+    /** true when a HIGHER number is better */
+    higherBetter: boolean;
+    sub: string;
+    help: string;
+  }[] = [
+    {
+      label: "Fairways",
+      value: pct(stats.firPct),
+      bench: b.fir * 100,
+      fmt: (v) => `${v.toFixed(0)}%`,
+      higherBetter: true,
+      sub: `${stats.fairwaysHit}/${stats.fairwayOpps}`,
+      help:
+        missTotal > 0
+          ? `Misses: ${stats.missLeft} left · ${stats.missRight} right`
+          : "Driving accuracy on par 4s and 5s",
+    },
+    {
+      label: "Greens in reg",
+      value: pct(stats.girPct),
+      bench: b.gir * 100,
+      fmt: (v) => `${v.toFixed(0)}%`,
+      higherBetter: true,
+      sub: `${stats.girHit}/${stats.girHoles}`,
+      help: "The stat that correlates most tightly with scoring",
+    },
+    {
+      label: "Putts / 18",
+      value: stats.puttsPer18,
+      bench: b.putts,
+      fmt: (v) => v.toFixed(1),
+      higherBetter: false,
+      sub: `${stats.putts} over ${stats.puttHoles} holes`,
+      help: "Raw putts — flattering when you miss greens and chip close",
+    },
+    {
+      label: "Putts / GIR",
+      value: stats.puttsPerGIR,
+      bench: b.puttsPerGIR,
+      fmt: (v) => v.toFixed(2),
+      higherBetter: false,
+      sub: `${stats.girPuttHoles} greens`,
+      help: "Putts once you hit the green — the honest putting number",
+    },
+    {
+      label: "Scrambling",
+      value: pct(stats.scramblingPct),
+      bench: b.scrambling * 100,
+      fmt: (v) => `${v.toFixed(0)}%`,
+      higherBetter: true,
+      sub: `${stats.scrambleSaves}/${stats.scrambleOpps}`,
+      help: "Par or better after missing the green",
+    },
+    {
+      label: "Three-putts",
+      value: pct(stats.threePuttPct),
+      bench: b.threePutt * 100,
+      fmt: (v) => `${v.toFixed(1)}%`,
+      higherBetter: false,
+      sub: `${stats.threePutts} of ${stats.puttHoles} holes`,
+      help: "Share of holes taking 3+ putts",
+    },
+  ];
+
+  return (
+    <div className="space-y-1 rounded-lg border border-border bg-bg-raised p-3">
+      {rows.map((r) => {
+        const has = r.value != null;
+        const delta = has ? r.value! - r.bench : 0;
+        const good = r.higherBetter ? delta >= 0 : delta <= 0;
+        return (
+          <div key={r.label} className="flex items-start justify-between py-1">
+            <div className="flex-1 pr-3">
+              <div className="text-xs text-fg">{r.label}</div>
+              <div className="text-[10px] text-fg-faint">{r.help}</div>
+            </div>
+            <div className="text-right">
+              <div className="num text-sm text-fg">
+                {has ? r.fmt(r.value!) : "—"}{" "}
+                <span className="text-fg-faint">/ {r.fmt(r.bench)}</span>
+              </div>
+              <div className={cn("num text-[10px]", has ? (good ? "text-sg-gain" : "text-sg-loss") : "text-fg-faint")}>
+                {has ? `${delta > 0 ? "+" : ""}${r.fmt(delta)} · ${r.sub}` : "no data yet"}
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

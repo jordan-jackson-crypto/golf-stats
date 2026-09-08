@@ -1,4 +1,5 @@
 import type { Lie } from "@/lib/sg/types";
+import type { MentalMistakeTag } from "@/lib/mental";
 
 export interface UnforcedErrors {
   sixPlusOnPar5?: boolean;
@@ -8,6 +9,36 @@ export interface UnforcedErrors {
   shortSided?: boolean;
   penaltyObWater?: boolean;
   mentalMistake?: boolean;
+  /** Detail captured when `mentalMistake` is flagged. */
+  mental?: MentalMistakeDetail;
+}
+
+/** Every key on UnforcedErrors that is a simple on/off flag. */
+export type UnforcedErrorFlag = Exclude<keyof UnforcedErrors, "mental">;
+
+/** Where in the hole the mental mistake happened. */
+export type MentalPhase = "tee" | "approach" | "short-game" | "putt" | "between";
+
+/** Structured detail behind a flagged mental mistake. */
+export interface MentalMistakeDetail {
+  /** One or more tags from MENTAL_MISTAKES. */
+  tags: MentalMistakeTag[];
+  /** Which shot it showed up on. */
+  phase?: MentalPhase;
+  /** Free-text: what actually happened, in your own words. */
+  note?: string;
+}
+
+/** Traditional (non-SG) per-hole stats — fairway, green, putts. */
+export type FairwayResult = "hit" | "left" | "right" | "miss";
+
+export interface HoleStats {
+  /** Tee shot result on par 4/5. Undefined = not recorded. */
+  fairway?: FairwayResult;
+  /** Green in regulation — on the green in (par − 2) or fewer. */
+  gir?: boolean;
+  /** Putts taken on the hole. */
+  putts?: number;
 }
 
 export type ShotShape = "straight" | "draw" | "fade" | "pull" | "push";
@@ -48,6 +79,8 @@ export interface StoredRound {
   holeScores?: number[];
   /** Unforced-error flags per hole. */
   unforcedErrorsByHole?: UnforcedErrors[];
+  /** Traditional stats (fairway / green / putts) per hole. */
+  holeStatsByHole?: HoleStats[];
   notes?: string;
   status: "draft" | "complete";
   totalScore?: number;
